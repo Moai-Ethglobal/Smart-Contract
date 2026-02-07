@@ -22,10 +22,14 @@ contract Moai is ReentrancyGuard {
     uint256 public constant EMERGENCY_MAX_PERCENT = 15;
     uint256 public constant EMERGENCY_APPROVAL_THRESHOLD = 51;
     
-        mapping(address => bool) public isMember;
+    mapping(address => bool) public isMember;
     mapping(address => uint256) public outstandingAmount;
-    mapping(address => bool) public paidThisMonth;
-        uint256 public monthlyCollectedAmount; // For current month distribution
+    mapping(address => bool) public paidThisMonth;       mapping(address => bool) public votedForDissolution;
+
+    uint256 public monthlyCollectedAmount; // For current month distribution
+
+    mapping(uint256 => RemovalRequest) public removalRequests;
+    uint256 public removalRequestCount;
 
 
     constructor(address _usdc,uint256 _contributionAmount,
@@ -102,5 +106,64 @@ contract Moai is ReentrancyGuard {
         monthlyCollectedAmount += amount;
         
         emit OutstandingUpdated(msg.sender, outstandingAmount[msg.sender]);
+    }
+
+    // voting - dissolution
+    function voteForDissolution() external {
+        if (!isMember[msg.sender]) revert NotMember();
+        if (isDissolved) revert AlreadyDissolved();
+        if (votedForDissolution[msg.sender]) revert AlreadyVoted();
+        
+        votedForDissolution[msg.sender] = true;
+        dissolutionVotes++;
+        
+        if (dissolutionVotes == members.length) {
+            isDissolved = true;
+            //have to balance to distribute to all members equally
+            emit MoaiDissolved(totalBalance, members.length);
+        }
+    }
+    function distribute() external nonReentrant{}
+
+    function withdraw() external nonReentrant{}
+
+    //voting - removal
+
+
+    function proposeRemoval(address member) external returns (uint256) {
+        if (!isMember[msg.sender]) revert NotMember();
+        if (!isMember[member]) revert NotMember();
+        
+        // Check if member exceeds threshold
+        uint256 threshold = contributionAmount * removalThresholdMonths;
+        require(outstandingAmount[member] >= threshold, "Below removal threshold");
+        
+        uint256 requestId = removalRequestCount++;
+        RemovalRequest storage request = removalRequests[requestId];
+        request.member = member;
+        
+        return requestId;
+    }
+    
+    function voteRemoval(uint256 requestId, bool approve) external {
+        if (!isMember[msg.sender]) revert NotMember();
+        
+        RemovalRequest storage request = removalRequests[requestId];
+        if (request.hasVoted[msg.sender]) revert AlreadyVoted();
+        if (request.executed) revert("Already executed");
+        
+        request.hasVoted[msg.sender] = true;
+        
+        if (approve) {
+            request.approvalCount++;
+            
+            // 51% approval needed
+            uint256 requiredVotes = (members.length * 51 + 99) / 100;
+            
+            if (request.approvalCount >= requiredVotes && !request.executed) {
+                request.executed = true;
+                _removeMember(request.member);
+            }
+        }
     }
 }

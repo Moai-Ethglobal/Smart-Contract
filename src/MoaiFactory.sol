@@ -17,4 +17,11 @@ contract MoaiFactory {
         moaisByCreator[msg.sender].push(moaiAddress);
         return moaiAddress;
     }
+     function getAllMoais() external view returns (address[] memory) {
+        return allMoais;
+    }
+    
+    function getMoaisByCreator(address creator) external view returns (address[] memory) {
+        return moaisByCreator[creator];
+    }
 }
