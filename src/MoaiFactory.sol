@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 contract MoaiFactory {
     address public immutable USDC;
-    address[]. publi allMoais;
+    address[] public allMoais;
     mapping(address => address[]) public moaisByCreator;
 
     constructor(address _usdc)

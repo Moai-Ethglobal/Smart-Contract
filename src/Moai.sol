@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract Moai is ReentrancyGuard {
     IERC20 public immutable USDC;
@@ -12,16 +12,26 @@ contract Moai is ReentrancyGuard {
     address[] public members;
     uint256 public constant MAX_MEMBERS = 10;
 
-   uint256 public currentMonth;
+    uint256 public currentMonth;
     uint256 public roundRobinIndex;
     uint256 public createdAt;
+
+    bool public isDissolved;
+    uint256 public dissolutionVotes;
+
+    uint256 public constant EMERGENCY_MAX_PERCENT = 15;
+    uint256 public constant EMERGENCY_APPROVAL_THRESHOLD = 51;
+    
+        mapping(address => bool) public isMember;
+    mapping(address => uint256) public outstandingAmount;
+    mapping(address => bool) public paidThisMonth;
+        uint256 public monthlyCollectedAmount; // For current month distribution
 
 
     constructor(address _usdc,uint256 _contributionAmount,
         uint256 _contributionDueDate,
         uint256 _removalThresholdMonths,address initialmember)
     {
-        require(_initialMembers.length <= MAX_MEMBERS, "Too many members");
         require(_contributionAmount > 0, "Invalid amount");
         require(_contributionDueDate >= 1 && _contributionDueDate <= 28, "Invalid due date");
          
@@ -34,7 +44,7 @@ contract Moai is ReentrancyGuard {
     }
 
     function joinMoai() external {
-         if (members.length >= MAX_MEMBERS) revert MaxMembersReached();
+        if (members.length >= MAX_MEMBERS) revert MaxMembersReached();
         if (isMember[msg.sender]) revert AlreadyMember();
         
         members.push(msg.sender);
@@ -69,6 +79,28 @@ contract Moai is ReentrancyGuard {
             isDissolved = true;
         }
     }
+    // contributions
 
+
+    function contribute() external nonReentrant {
+        if (!isMember[msg.sender]) revert NotMember();
+        if (paidThisMonth[msg.sender]) revert ContributionAlreadyMade();
+        
+        USDC.transferFrom(msg.sender, address(this), contributionAmount);
+        paidThisMonth[msg.sender] = true;
+        monthlyCollectedAmount += contributionAmount;
+        
+        emit ContributionMade(msg.sender, contributionAmount, currentMonth);
+    }
     
+     function payOutstanding(uint256 amount) external nonReentrant {
+        if (!isMember[msg.sender]) revert NotMember();
+        require(amount > 0 && amount <= outstandingAmount[msg.sender], "Invalid amount");
+        
+        USDC.transferFrom(msg.sender, address(this), amount);
+        outstandingAmount[msg.sender] -= amount;
+        monthlyCollectedAmount += amount;
+        
+        emit OutstandingUpdated(msg.sender, outstandingAmount[msg.sender]);
+    }
 }
