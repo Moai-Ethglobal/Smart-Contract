@@ -25,7 +25,7 @@ contract Moai is ReentrancyGuard {
     error TooEarlyToDistribute();
     error InsufficientContributors();
     error AlreadyWithdrawnDissolution();
-    error InvalidDueDate();
+    error InvalidCycleDay();
     
     // ============ STATE VARIABLES ============
     
@@ -33,7 +33,7 @@ contract Moai is ReentrancyGuard {
     
     string public name;
     uint256 public contributionAmount;
-    uint256 public contributionDueDate; // Day of month (1-28)
+    uint256 public cycleDayDue; // Day within 30-day cycle (1-30)
     uint256 public removalThresholdMonths;
     
     uint256 public constant MAX_MEMBERS = 10;
@@ -78,6 +78,9 @@ contract Moai is ReentrancyGuard {
     // Track last paid month instead of resetting bool
     mapping(address => uint256) public lastPaidMonth;
     
+    // NEW: Track pending round-robin distributions
+    mapping(address => uint256) public pendingDistribution;
+    
     // Emergency requests
     struct EmergencyRequest {
         address beneficiary;
@@ -106,7 +109,8 @@ contract Moai is ReentrancyGuard {
     event MemberAdded(address indexed member, uint256 joinMonth);
     event MemberRemoved(address indexed member);
     event ContributionMade(address indexed member, uint256 amount, uint256 month);
-    event MonthDistributed(uint256 month, uint256 toEmergency, uint256 toDistribution);
+    event OutstandingPaid(address indexed member, uint256 amount);
+    event MonthDistributed(uint256 month, address indexed recipient, uint256 toEmergency, uint256 toDistribution);
     event EmergencyRequested(uint256 indexed requestId, address indexed beneficiary, uint256 amount);
     event EmergencyApproved(uint256 indexed requestId, address indexed beneficiary, uint256 amount);
     event Withdrawn(address indexed recipient, uint256 amount, string reason);
@@ -114,30 +118,37 @@ contract Moai is ReentrancyGuard {
     
     // ============ CONSTRUCTOR ============
     
+    /**
+     * @notice Initialize a new Moai savings pool
+     * @dev Operates on fixed 30-day cycles, NOT calendar months
+     * @param _usdc USDC token address
+     * @param _name Name of the Moai group
+     * @param _contributionAmount Monthly contribution in USDC (6 decimals)
+     * @param _cycleDayDue Day within 30-day cycle for contributions (1-30)
+     * @param _removalThresholdMonths Months of missed payments before removal eligible
+     * @param _initialMember First member address
+     */
     constructor(
         address _usdc,
         string memory _name,
         uint256 _contributionAmount,
-        uint256 _contributionDueDate,
+        uint256 _cycleDayDue,
         uint256 _removalThresholdMonths,
-        address _initialmember
+        address _initialMember
     ) {
         if (_contributionAmount == 0) revert InvalidAmount();
-        if (_contributionDueDate < 1 || _contributionDueDate > 28) revert InvalidDueDate();
+        if (_cycleDayDue < 1 || _cycleDayDue > 30) revert InvalidCycleDay();
         
         USDC = IERC20(_usdc);
         
         name = _name;
         contributionAmount = _contributionAmount;
-        contributionDueDate = _contributionDueDate;
+        cycleDayDue = _cycleDayDue;
         removalThresholdMonths = _removalThresholdMonths;
         createdAt = block.timestamp;
         currentMonth = 1;
         
-
-        
-        _addMember(_initialmember);
-        
+        _addMember(_initialMember);
     }
     
     // ============ MEMBER MANAGEMENT ============
@@ -174,7 +185,7 @@ contract Moai is ReentrancyGuard {
     }
     
     function _removeMember(address member) internal {
-       //swap pop
+        // Swap and pop
         uint256 index = memberInfo[member].arrayIndex;
         address lastMember = memberAddresses[memberAddresses.length - 1];
         
@@ -191,11 +202,6 @@ contract Moai is ReentrancyGuard {
         }
         
         emit MemberRemoved(member);
-        
-        // Auto-dissolve if only 1 member left
-        if (activeMemberCount == 1) {
-            isDissolved = true;
-        }
     }
     
     // ============ CONTRIBUTION LOGIC ============
@@ -215,6 +221,11 @@ contract Moai is ReentrancyGuard {
         emit ContributionMade(msg.sender, contributionAmount, currentMonth);
     }
     
+    /**
+     * @notice Pay outstanding back-payments
+     * @dev Back-payments go directly to emergency reserve (not distributed to round-robin)
+     * @param amount Amount to pay toward outstanding balance
+     */
     function payOutstanding(uint256 amount) external nonReentrant {
         if (!memberInfo[msg.sender].isActive) revert NotMember();
         if (amount == 0) revert InvalidAmount();
@@ -224,14 +235,19 @@ contract Moai is ReentrancyGuard {
         
         USDC.transferFrom(msg.sender, address(this), amount);
         memberInfo[msg.sender].totalContributed += amount;
-        monthlyCollectedAmount += amount;
+        
+        // Back-payments go to emergency reserve (penalty for missing months)
+        emergencyReserve += amount;
+        
+        emit OutstandingPaid(msg.sender, amount);
     }
     
     // ============ DISTRIBUTION LOGIC ============
     
     /**
-     * @notice Distribute monthly funds: 70% to round-robin, 30% to emergency reserve
+     * @notice Distribute monthly funds: 70% to round-robin recipient, 30% to emergency reserve
      * @dev Can only be called after distribution date (due date + 1 day) AND 51% paid
+     * @dev Operates on fixed 30-day cycles, NOT calendar months
      */
     function distributeMonth() external nonReentrant {
         // Check timing: must be after due date + grace period
@@ -244,13 +260,25 @@ contract Moai is ReentrancyGuard {
         
         if (monthlyCollectedAmount == 0) revert InvalidAmount();
         
+        // Ensure round-robin index is valid (in case members were removed)
+        if (roundRobinIndex >= memberAddresses.length) {
+            roundRobinIndex = 0;
+        }
+        
         // Split collected amount: 70% distribution, 30% emergency
         uint256 toEmergency = (monthlyCollectedAmount * EMERGENCY_PERCENT) / 100;
         uint256 toDistribution = monthlyCollectedAmount - toEmergency;
         
         emergencyReserve += toEmergency;
         
-        emit MonthDistributed(currentMonth, toEmergency, toDistribution);
+        // Allocate distribution to current round-robin recipient
+        address recipient = memberAddresses[roundRobinIndex];
+        pendingDistribution[recipient] += toDistribution;
+        
+        emit MonthDistributed(currentMonth, recipient, toEmergency, toDistribution);
+        
+        // Advance round-robin for next month
+        roundRobinIndex = (roundRobinIndex + 1) % memberAddresses.length;
         
         // Reset for next month
         monthlyCollectedAmount = 0;
@@ -259,6 +287,7 @@ contract Moai is ReentrancyGuard {
     
     /**
      * @notice Get next distribution date (due date + 1 day grace period)
+     * @dev Based on fixed 30-day cycles from creation time
      */
     function getNextDistributionDate() public view returns (uint256) {
         // Calculate timestamp for (due date + 1 day) of current month
@@ -266,14 +295,13 @@ contract Moai is ReentrancyGuard {
         uint256 secondsSinceCreation = monthsSinceCreation * 30 days;
         
         // Due date + 1 day grace
-        uint256 daysUntilDistribution = contributionDueDate + 1;
+        uint256 daysUntilDistribution = cycleDayDue + 1;
         
         return createdAt + secondsSinceCreation + (daysUntilDistribution * 1 days);
     }
     
     /**
      * @notice Count how many members contributed this month
-     * @dev Only loop needed - max 10 iterations
      */
     function _countContributors() internal view returns (uint256) {
         uint256 count = 0;
@@ -289,23 +317,17 @@ contract Moai is ReentrancyGuard {
     
     /**
      * @notice Withdraw approved funds
-     * @dev Three cases: round-robin, emergency, dissolution
+     * @dev Three cases: pending distribution, emergency, dissolution
      */
     function withdraw() external nonReentrant {
         uint256 amount = 0;
         string memory reason;
         
-        // Case 1: Round-robin distribution
-        if (currentMonth > 1 && 
-            memberAddresses.length > 0 && 
-            msg.sender == memberAddresses[roundRobinIndex]) {
-            
-            uint256 availableBalance = USDC.balanceOf(address(this));
-            if (availableBalance > emergencyReserve) {
-                amount = availableBalance - emergencyReserve;
-                roundRobinIndex = (roundRobinIndex + 1) % memberAddresses.length;
-                reason = "Round-robin distribution";
-            }
+        // Case 1: Pending round-robin distribution
+        if (pendingDistribution[msg.sender] > 0) {
+            amount = pendingDistribution[msg.sender];
+            pendingDistribution[msg.sender] = 0;
+            reason = "Round-robin distribution";
         }
         
         // Case 2: Approved emergency
@@ -318,7 +340,7 @@ contract Moai is ReentrancyGuard {
             reason = "Emergency approved";
         }
         
-        // Case 3: Dissolution - FIXED BUG
+        // Case 3: Dissolution
         if (amount == 0 && isDissolved) {
             if (memberInfo[msg.sender].withdrawnDissolution) revert AlreadyWithdrawnDissolution();
             
@@ -432,6 +454,11 @@ contract Moai is ReentrancyGuard {
             uint256 totalBalance = USDC.balanceOf(address(this));
             dissolutionSharePerMember = totalBalance / activeMemberCount;
             
+            // Clear all pending distributions (folded into dissolution share)
+            for (uint256 i = 0; i < memberAddresses.length; i++) {
+                pendingDistribution[memberAddresses[i]] = 0;
+            }
+            
             emit MoaiDissolved(totalBalance, activeMemberCount, dissolutionSharePerMember);
         }
     }
@@ -492,5 +519,9 @@ contract Moai is ReentrancyGuard {
     
     function hasPaidThisMonth(address member) external view returns (bool) {
         return lastPaidMonth[member] == currentMonth;
+    }
+    
+    function getPendingDistribution(address member) external view returns (uint256) {
+        return pendingDistribution[member];
     }
 }
