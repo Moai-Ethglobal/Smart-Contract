@@ -62,7 +62,7 @@ contract MoaiFactory {
             _contributionAmount,
             _contributionDueDate,
             _removalThresholdMonths,
-            msg.sender
+            _initialMember
         );
         
         moaiAddress = address(moai);
