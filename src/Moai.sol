@@ -138,7 +138,8 @@ contract Moai is ReentrancyGuard {
     ) {
         if (_contributionAmount == 0) revert InvalidAmount();
         if (_cycleDayDue < 1 || _cycleDayDue > 30) revert InvalidCycleDay();
-        
+        if (_initialMember == address(0)) revert InvalidAmount();
+
         USDC = IERC20(_usdc);
         
         name = _name;

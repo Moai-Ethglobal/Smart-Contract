@@ -64,6 +64,11 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+Deployment Address :
+MoaiFactory deployed at: 0x5143cbB43ba26b57dF3F5F8Dd95C702c81b9531F
+Moai deployed at: 0xD3d49D38dd4aa792f7ad124016D652521312a5C0
+
 A moai is a group of individulas who trust each other and share liflong bonds that helps them feel connected, battling loneliness and financial hardships throughout their oldage.
 
 The concept has been in practice for decades in okinawa,Japan contibuting to the longevity of people in the region. A variation of this can also be found in the villages of tamil nadu known as 'Magalir Suya Udhavi Kulu' (Women self help group).
@@ -71,7 +76,7 @@ The concept has been in practice for decades in okinawa,Japan contibuting to the
 Anyone can create a group(called a moai).They send out invites over email or share the link to join. A member can join via an invite link. Each member can only be part of one group with each moai having a maximum of 5 to 10 members.
 
 Every month, each member pays a fixed amount before a set date of the month. Any amount which was missed can be paid within that calendar month incase of unforseen cirumstance, which will be added to the following month's pool. They will be able to view their past transactions in their My History.
-This consistent savings is invested every month into the a yield generation with low risk and easily liquifiable pool.
+This consistent savings is saved for any emergency requests by the members.
 
 A calendar invite is created for every month to meet on huddle at the same time. Only members of the moai are invited,and the moai system enforces participation of all the members.
 This continously communication creates a sense of community and builds relationship over decades.

@@ -42,7 +42,7 @@ contract MoaiFactory {
      * @notice Create a new Moai pool
      * @param _name Name of the moai group
      * @param _contributionAmount Monthly contribution amount in USDC (6 decimals)
-     * @param _contributionDueDate Day of month (1-28)
+     * @param _contributionDueDate Day of month (1-30)
      * @param _removalThresholdMonths Months of missed payments before removal vote
      * @param _initialMember Initial member addresses
      * @return moaiAddress Address of the newly created Moai
@@ -54,7 +54,8 @@ contract MoaiFactory {
         uint256 _removalThresholdMonths,
         address  _initialMember
     ) external returns (address moaiAddress) {
-        
+        if (_initialMember == address(0)) revert InvalidParameters();
+
         // Deploy new Moai
         Moai moai = new Moai(
             USDC,
