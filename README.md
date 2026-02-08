@@ -101,3 +101,7 @@ Every 100 USDC contributed:
                     • Builds over time
                     • Democratic distribution
                     • 51% approval required
+
+Links
+- Live demo: [moai-eth.vercel.app](https://moai-eth.vercel.app/)
+- Pitch deck: [Canva](https://www.canva.com/design/DAHAvLOEFLU/byHuMAyfZspXW7QwlQGIWw/edit?utm_content=DAHAvLOEFLU&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
