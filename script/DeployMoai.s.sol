@@ -6,15 +6,14 @@ import "../src/MoaiFactory.sol";
 
 contract DeployMoai is Script {
     function run() external {
-
         // USDC address
-    
+
         address usdc = vm.envAddress("USDC_ADDRESS");
 
         // Moai parameters
         string memory name = "Friends Moai";
         uint256 contributionAmount = 100 * 1e6; // 100 USDC (6 decimals)
-        uint256 cycleDayDue = 5;                 // Day 5 of 30-day cycle
+        uint256 cycleDayDue = 5; // Day 5 of 30-day cycle
         uint256 removalThresholdMonths = 2;
 
         // =============================
@@ -27,13 +26,8 @@ contract DeployMoai is Script {
         MoaiFactory factory = new MoaiFactory(usdc);
 
         // 2. Create Moai via Factory
-        address moaiAddress = factory.createMoai(
-            name,
-            contributionAmount,
-            cycleDayDue,
-            removalThresholdMonths,
-            msg.sender
-        );
+        address moaiAddress =
+            factory.createMoai(name, contributionAmount, cycleDayDue, removalThresholdMonths, msg.sender);
 
         vm.stopBroadcast();
 
